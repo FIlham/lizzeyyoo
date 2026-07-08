@@ -15,7 +15,7 @@ RUN bun install --frozen-lockfile
 COPY . .
 
 # Build production bundle (vinxi/tanstack-start)
-# Outputs to .output/ directory
+# Outputs to dist/ directory
 RUN bun --bun run build
 
 # ============================================================
@@ -28,16 +28,16 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Copy built output from builder
-COPY --from=builder /app/.output ./.output
+COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/bun.lock ./bun.lock
 
 # Install only production dependencies
 RUN bun install --frozen-lockfile --production
 
-# Copy Drizzle migrations so we can run `migrate` on startup
+# Copy Drizzle migrations and programmatic migration runner
 COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
+COPY --from=builder /app/src/server/migrate.ts ./src/server/migrate.ts
 
 # Non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
@@ -46,4 +46,4 @@ USER appuser
 EXPOSE 3000
 
 # Start the production server
-CMD ["bun", "--bun", "run", ".output/server/index.mjs"]
+CMD ["bun", "--bun", "run", "dist/server/server.js"]
