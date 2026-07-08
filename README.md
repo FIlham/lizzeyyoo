@@ -91,12 +91,13 @@ D:/Projects/lizzeyyoo/
     │   ├── db.server.ts             # Drizzle instance (postgres-js connection)
     │   ├── redis.server.ts          # Redis client (ioredis)
     │   ├── cache.server.ts          # Cache helpers (cacheGetOrSet, cacheInvalidateUser)
-    │   ├── auth.ts                  # Better Auth instance (Drizzle adapter + Redis session)
+    │   ├── ratelimit.server.ts      # Redis sliding window rate limiter (AI, auth, finance)
+    │   ├── auth.ts                  # Better Auth instance + authHandlerWithRateLimit()
     │   ├── session.server.ts        # getAuthContext() — resolve userId from session
     │   ├── auth.fn.ts               # getSessionFn() — session check for route guards
     │   ├── finance.types.ts         # TypeScript interfaces (Transaction, Goal, etc.)
     │   ├── finance.service.ts       # Business logic — all queries userId-scoped via Drizzle
-    │   └── finance.fn.ts            # createServerFn() RPC wrappers (importable by routes)
+    │   └── finance.fn.ts            # createServerFn() RPC wrappers + rate-limit enforcement
     │
     ├── services/                    # AI integration
     │   └── ai.server.ts             # Gemini 2.5 Flash chatbot + 8 finance tools
@@ -104,11 +105,11 @@ D:/Projects/lizzeyyoo/
     └── routes/
         ├── __root.tsx               # Root layout (HTML shell + sticky navbar)
         ├── index.tsx                # Landing page (public)
-        ├── login.tsx                # Login form (redirect to /dashboard if logged in)
-        ├── signup.tsx               # Signup form (redirect to /dashboard if logged in)
+        ├── login.tsx                # Login form (rate-limit 429 handling + countdown)
+        ├── signup.tsx               # Signup form (rate-limit 429 handling + countdown)
         ├── dashboard.tsx            # Dashboard (protected — requires auth)
-        ├── chat.tsx                 # AI Chatbot (protected)
-        └── api/auth/$.tsx           # Better Auth handler mount point
+        ├── chat.tsx                 # AI Chatbot (protected, rate-limit progress bar UI)
+        └── api/auth/$.tsx           # Better Auth handler — authHandlerWithRateLimit()
 ```
 
 ## Architecture
@@ -189,9 +190,15 @@ Semua didefinisikan di `src/server/finance.fn.ts`. Setiap call otomatis memvalid
 | Savings goal tracking | ✅ Done | Progress bar + update form |
 | Smart Text Input (AI NL parser) | ✅ Done | Via AI Chatbot tools |
 | AI Financial Insight Chatbot | ✅ Done | Route `/chat`, Gemini 2.5 Flash |
-| Premium dark-mode UI | ✅ Done | Glassmorphism, glow, responsive |
+| Premium dark-mode UI | ✅ Done | Minimalist-industrial, GSAP animations |
 | Data isolation per user | ✅ Done | Semua query WHERE userId |
 | Redis cache invalidation | ✅ Done | Setelah setiap mutation |
+| Rate-limiting (AI Chat) | ✅ Done | 10 msg/min + 60 msg/hr per user, Redis |
+| Rate-limiting (Auth) | ✅ Done | 5 login/15min + 3 signup/hr per IP |
+| Rate-limiting (Finance write) | ✅ Done | 30 ops/min per user |
+| Production Dockerfile | ✅ Done | Multi-stage Alpine, non-root |
+| Production Docker Compose | ✅ Done | 5 services: app+postgres+redis+nginx+certbot |
+| Nginx + SSL (Let's Encrypt) | ✅ Done | Config siap, belum di-deploy |
 
 ## Critical Rules (MUST READ)
 
@@ -202,8 +209,10 @@ Semua didefinisikan di `src/server/finance.fn.ts`. Setiap call otomatis memvalid
    - `*.types.ts` → Shared type definitions, importable anywhere.
 3. **Auth Guard:** Every server function MUST call `getAuthContext()` to get userId before any DB operation.
 4. **Cache Invalidation:** Every mutation MUST call `cacheInvalidateUser(userId)` after DB write.
-5. **CSS Import:** Use side-effect import (`import '../global.css'`).
-6. **routeTree.gen.ts:** Auto-generated. Never edit manually.
+5. **Rate-Limiting:** Write mutations & AI chat MUST call `checkRateLimit()` from `ratelimit.server.ts`. Auth endpoints handled by `authHandlerWithRateLimit()` in `auth.ts`.
+6. **Production Hostname:** Di `.env.production`, database host = `db`, Redis host = `redis` (Docker service names, bukan `localhost`).
+7. **CSS Import:** Use side-effect import (`import '../global.css'`).
+8. **routeTree.gen.ts:** Auto-generated. Never edit manually.
 
 ---
 
@@ -247,10 +256,29 @@ Normal — Rsbuild otomatis fallback ke port berikutnya jika 3000 sudah terpakai
 
 ---
 
-## Changelog (Sesi Terbaru)
+## Changelog
 
-- **UI Overhaul:** Peralihan penuh dari desain bercahaya (neon) ke estetika *minimalist-industrial* berbasis *Tailwind Zinc palette* yang bersih, elegan, dan profesional.
-- **GSAP Integration:** Pemasangan animasi transisi dan *ScrollTrigger* di setiap halaman (`gsap` & `@gsap/react`) untuk menyajikan pengalaman interaktif yang lebih *fluid* dan berkelas.
-- **Improved Layouts:** Restrukturisasi seksi "About" (2 kolom gambar/teks) dan seksi "Connect" (kartu navigasi sosial media *bento grid*) pada *landing page*.
-- **Chat Scrolling Fix:** Pembaharuan penataan letak CSS untuk area percakapan (`/chat`) supaya tidak lagi mengulir seluruh halaman melainkan hanya pada kontainer chatnya saja. Nama agen kini menjadi "Lizzy".
+### Sesi Terbaru — Rate-Limiting & Deployment
+
+- **Rate-Limiting (Redis Sliding Window):**
+  - Buat `src/server/ratelimit.server.ts` — generic rate limiter dengan `checkRateLimit()`, `RateLimitError`, dan pre-defined limit profiles.
+  - AI Chat dibatasi 10 msg/menit + 60 msg/jam per user (protect free Gemini quota).
+  - Finance write mutations dibatasi 30 ops/menit per user.
+  - Auth sign-in dibatasi 5x/15 menit per IP; sign-up 3x/jam per IP via `authHandlerWithRateLimit()`.
+  - Chat UI menampilkan progress bar msg/min dan countdown timer saat rate-limited.
+  - Login & signup menampilkan pesan error 429 dengan countdown timer Bahasa Indonesia.
+
+- **Deployment Production:**
+  - `Dockerfile` multi-stage (builder Alpine → runner Alpine, non-root user).
+  - `docker-compose.prod.yml` dengan 5 services dan health checks.
+  - `nginx/` — reverse proxy + SSL termination + Nginx-level rate-limit + 120s timeout AI streaming.
+  - Let's Encrypt via Certbot, auto-renew setiap 12 jam.
+  - `.env.production.example` sebagai template secrets.
+
+### Sesi Sebelumnya
+
+- **UI Overhaul:** Peralihan penuh dari desain bercahaya (neon) ke estetika *minimalist-industrial* berbasis *Tailwind Zinc palette*.
+- **GSAP Integration:** Animasi transisi dan *ScrollTrigger* di setiap halaman.
+- **Improved Layouts:** Restrukturisasi seksi "About" dan "Connect" pada *landing page*.
+- **Chat Scrolling Fix:** Area percakapan `/chat` mengulir hanya pada kontainernya. Nama agen kini "Lizzy".
 

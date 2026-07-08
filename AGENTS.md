@@ -67,7 +67,7 @@ File `src/routeTree.gen.ts` di-generate otomatis oleh TanStack Start saat dev se
 
 ### 7. Better Auth Handler Route
 
-File `src/routes/api/auth/$.tsx` adalah mount point untuk Better Auth. Route ini menggunakan `server.handlers.ANY` untuk meneruskan semua request ke `auth.handler`. **Jangan hapus atau modifikasi ini.**
+File `src/routes/api/auth/$.tsx` adalah mount point untuk Better Auth. Route ini menggunakan `server.handlers.ANY` dan memanggil `authHandlerWithRateLimit(request)` — wrapper yang menambah Redis rate-limit sebelum meneruskan ke `auth.handler`. **Jangan hapus atau modifikasi ini.**
 
 ### 8. Drizzle `defaultNow()` vs Postgres Column DEFAULT
 
@@ -114,6 +114,7 @@ Layer 4: Infrastructure (src/server/*.server.ts)
   ├─ db.server.ts — Drizzle + postgres-js connection
   ├─ redis.server.ts — ioredis client
   ├─ cache.server.ts — cacheGetOrSet + cacheInvalidateUser
+  ├─ ratelimit.server.ts — Redis sliding window rate limiter
   └─ session.server.ts — getAuthContext() via Better Auth
 
 Layer 5: Schema & Types
@@ -221,6 +222,23 @@ bun --bun run dev
 - AI tools di `ai.server.ts` meneruskan `userId` ke semua FinanceService calls.
 - `cacheInvalidateUser(userId)` dipanggil setelah setiap mutation.
 
+### Rate-Limiting (Redis Sliding Window)
+- **Status:** ✅ Lengkap
+- **File:** `src/server/ratelimit.server.ts` — `checkRateLimit()`, `RateLimitError`, pre-defined limit profiles.
+- **Auth:** `authHandlerWithRateLimit()` di `auth.ts` — sign-in 5x/15min per IP, sign-up 3x/jam per IP.
+- **AI Chat:** `sendChatMessageFn` — 10 msg/menit + 60 msg/jam per userId (protect free Gemini quota).
+- **Finance Mutations:** `createTransactionFn`, `deleteTransactionFn`, `updateBudgetFn`, `updateGoalFn` — 30 ops/menit per userId.
+- **UI Feedback:** Chat sidebar menampilkan progress bar msg/min, cooldown timer, dan tombol Send otomatis dinonaktifkan.
+- **Login/Signup UI:** Error 429 ditampilkan dengan countdown timer dan pesan Bahasa Indonesia.
+
+### Deployment Production
+- **Status:** ✅ File siap, belum di-deploy.
+- **Dockerfile:** Multi-stage (builder Alpine → runner Alpine), non-root user.
+- **docker-compose.prod.yml:** 5 services — `app`, `postgres`, `redis`, `nginx`, `certbot`.
+- **Nginx:** Reverse proxy + SSL termination + Nginx-level rate-limit zones + 120s timeout untuk AI streaming.
+- **SSL:** Let's Encrypt via Certbot, auto-renew setiap 12 jam.
+- **Env:** `.env.production.example` sebagai template; `.env.production` di-gitignore.
+
 ---
 
 ## Environment
@@ -264,9 +282,26 @@ bun --bun run dev
 - [x] **7. Tambah `.gitignore` sebelum `git init`.**
   - ✅ Selesai: `.gitignore` berisi `node_modules/`, `.env`, `.dev-*.log`, `dist/`, dll.
 
-### 🔵 Redesign UI & GSAP Animation (Sesi Terbaru)
+### 🔵 Redesign UI & GSAP Animation
 - **Status:** ✅ Selesai
 - **Desain:** Mengubah tema "cyberpunk glow" menjadi *minimalist-industrial* dengan palet zinc neutral.
 - **Animasi:** Integrasi `@gsap/react` dan `gsap` untuk animasi masuk dan `ScrollTrigger` di semua halaman (`__root.tsx`, `index.tsx`, `dashboard.tsx`, `chat.tsx`).
 - **Tata Letak:** Perbaikan layout di landing page (About 2-kolom, Connect bergaya *Bento Grid*) dan perbaikan scrolling di `/chat` agar *sidebar* tetap *fixed*.
 - **Identitas AI:** Diperbarui menjadi "Lizzy".
+
+### 🟠 Rate-Limiting (Sesi Terbaru)
+- **Status:** ✅ Selesai
+- [x] Buat `src/server/ratelimit.server.ts` — core Redis sliding window, `RateLimitError`, limit profiles.
+- [x] Pasang rate-limit di `sendChatMessageFn` (10 msg/menit + 60 msg/jam per userId).
+- [x] Pasang rate-limit di semua finance write mutations (30 ops/menit per userId).
+- [x] `authHandlerWithRateLimit()` di `auth.ts` — sign-in 5x/15min, sign-up 3x/jam, per IP.
+- [x] UI chat: progress bar msg/min, cooldown timer, Send button auto-disabled saat rate limited.
+- [x] Login & signup UI: tampilkan error 429 dengan countdown timer.
+
+### 🟣 Deployment Production (Sesi Terbaru)
+- **Status:** ✅ File siap
+- [x] Buat `Dockerfile` — multi-stage, runner non-root Alpine.
+- [x] Buat `docker-compose.prod.yml` — 5 services (app, postgres, redis, nginx, certbot).
+- [x] Buat `nginx/nginx.conf` + `nginx/conf.d/app.conf` — reverse proxy, SSL termination, rate-limit zones.
+- [x] Buat `.env.production.example` — template secrets untuk server.
+- [x] Update `.gitignore` — tambahkan `.env.production`.

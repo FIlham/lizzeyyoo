@@ -60,6 +60,8 @@ Helper cache di atas Redis:
 Better Auth instance dengan:
 - **Drizzle adapter** — persist user/session/account ke Postgres
 - **Redis secondary storage** — session token lookup via Redis (performa)
+- **Built-in `rateLimit`** — 20 req/60s per IP (global, in-memory)
+- **`authHandlerWithRateLimit()`** — wrapper function yang menambah Redis rate-limit per IP sebelum delegasi ke `auth.handler`: sign-in 5x/15min, sign-up 3x/jam
 - **`emailAndPassword`** — enabled, tanpa email verification untuk MVP
 - **`databaseHooks.user.create.after`** — auto-seed budgets & goal untuk user baru
 
@@ -88,7 +90,15 @@ getFinanceSummary(userId, days)  → cacheGetOrSet(`u:${userId}:summary:30d`, 30
 
 ### `src/server/finance.fn.ts`
 
-TanStack `createServerFn()` wrappers. Setiap handler memanggil `getAuthContext()` dulu untuk mendapatkan `userId`.
+TanStack `createServerFn()` wrappers. Setiap handler memanggil `getAuthContext()` dulu untuk mendapatkan `userId`. Write mutations (`createTransactionFn`, `deleteTransactionFn`, `updateBudgetFn`, `updateGoalFn`) memanggil `checkRateLimit` (30 ops/menit per userId) sebelum operasi DB. `sendChatMessageFn` memanggil `checkRateLimit` dengan `AI_CHAT_LIMITS` (10 msg/menit + 60 msg/jam) sebelum hit AI API.
+
+### `src/server/ratelimit.server.ts` _(baru)_
+
+Generic Redis sliding window rate limiter:
+- **`checkRateLimit(scope, rules)`** — atomic INCR + EXPIRE per bucket key. Throws `RateLimitError` jika melebihi limit.
+- **`RateLimitError`** — extends `Error`, berisi `retryAfterSec` dan `limitType`.
+- **Pre-defined profiles:** `AI_CHAT_LIMITS` (10/min, 60/hr), `FINANCE_WRITE_LIMITS` (30/min), `AUTH_SIGNIN_LIMITS` (5/15min), `AUTH_SIGNUP_LIMITS` (3/hr).
+- **`getClientIP(headers)`** — extract IP dari `X-Forwarded-For` atau `X-Real-IP`.
 
 ### `src/routes/api/auth/$.tsx`
 
@@ -198,6 +208,7 @@ Semua 8 tools meneruskan `userId` (dari server function context) ke FinanceServi
 3. **Redis KEYS scan** — `cacheInvalidateUser` pakai `KEYS u:userId:*`; acceptable untuk low-traffic MVP, switch ke SCAN cursor untuk high-throughput
 4. **Server session memory (chatMemory)** — Reset saat dev server restart; tidak persist cross-instance
 5. **No email verification** — `requireEmailVerification: false` untuk kemudahan local dev
+6. **Rate-limit counter lokal di UI** — Counter `msgCountMin` di `chat.tsx` adalah estimasi client-side; reset saat page refresh. Source of truth tetap di Redis server.
 
 ---
 
@@ -222,7 +233,7 @@ Semua 8 tools meneruskan `userId` (dari server function context) ke FinanceServi
 ### 🔴 Prioritas Tinggi
 
 - [x] **1. Buat route Better Auth handler `/api/auth/$`.**
-  - ✅ `src/routes/api/auth/$.tsx` — `server.handlers.ANY: ({ request }) => auth.handler(request)`
+  - ✅ `src/routes/api/auth/$.tsx` — `server.handlers.ANY: ({ request }) => authHandlerWithRateLimit(request)`
 
 - [x] **2. Generate & jalankan migrasi Drizzle.**
   - ✅ `drizzle/0000_peaceful_proteus.sql` di-generate. 7 tabel berhasil di-apply ke Postgres.
@@ -245,3 +256,72 @@ Semua 8 tools meneruskan `userId` (dari server function context) ke FinanceServi
 
 - [x] **7. Tambah `.gitignore` sebelum `git init`.**
   - ✅ `.gitignore` berisi `node_modules/`, `.env`, `.dev-*.log`, `dist/`, dll.
+
+---
+
+## 8. Rate-Limiting Implementation (Sesi Terbaru)
+
+### Strategi
+
+Redis fixed-window counter via `INCR` + `EXPIRE`. Bucket key: `rl:{rule.key}:{scope}:{bucket}` di mana `bucket = floor(now / windowSec)`. Atomic karena Redis single-threaded, tidak memerlukan MULTI/EXEC.
+
+### Batas yang Diterapkan
+
+| Endpoint | Max | Window | Scope | Key Pattern |
+|---|---|---|---|---|
+| AI Chat | 10 msg | 1 menit | per userId | `rl:ai_chat_min:user:{id}:{b}` |
+| AI Chat | 60 msg | 1 jam | per userId | `rl:ai_chat_hour:user:{id}:{b}` |
+| Finance write | 30 ops | 1 menit | per userId | `rl:finance_write_min:user:{id}:{b}` |
+| Sign-in | 5 coba | 15 menit | per IP | `rl:auth_signin_15min:ip:{ip}:{b}` |
+| Sign-up | 3 coba | 1 jam | per IP | `rl:auth_signup_hour:ip:{ip}:{b}` |
+| Global auth | 20 req | 1 menit | per IP | Better Auth built-in (memory) |
+
+### File yang Dimodifikasi
+
+- **`src/server/ratelimit.server.ts`** — [BARU] core limiter
+- **`src/server/auth.ts`** — tambah `authHandlerWithRateLimit()` + built-in `rateLimit` config
+- **`src/routes/api/auth/$.tsx`** — ganti `auth.handler` → `authHandlerWithRateLimit`
+- **`src/server/finance.fn.ts`** — tambah `checkRateLimit` di write mutations + `sendChatMessageFn`
+- **`src/routes/chat.tsx`** — tambah rate-limit progress bar + cooldown timer UI
+- **`src/routes/login.tsx`** — handle error 429 + countdown
+- **`src/routes/signup.tsx`** — handle error 429 + countdown
+
+---
+
+## 9. Deployment Production (Sesi Terbaru)
+
+### Arsitektur Production
+
+```
+Internet (80/443)
+    │
+┌────┴────┐
+│  Nginx  │  ← SSL termination, rate-limit zones, gzip
+└────┬────┘
+     │ proxy_pass :3000
+┌────┴────┐
+│   App   │  ← TanStack Start + Bun (internal)
+└────┬────┘
+    ┌─┤
+┌───┴┐  ┌──┴──┐
+│  PG   │  │ Redis  │  ← internal network
+└─────┘  └──────┘
+```
+
+### File yang Dibuat
+
+| File | Keterangan |
+|---|---|
+| `Dockerfile` | Multi-stage: `builder` (bun install + build) → `runner` (Alpine minimal, non-root) |
+| `docker-compose.prod.yml` | 5 services dengan health checks; hanya Nginx expose port ke host |
+| `nginx/nginx.conf` | gzip, security headers, `limit_req_zone` untuk `general` (30r/m) dan `auth` (5r/m) |
+| `nginx/conf.d/app.conf` | 2-fase: HTTP (Certbot challenge) → HTTPS (TLS 1.2/1.3, rate-limit, 120s AI timeout) |
+| `.env.production.example` | Template dengan hostname internal Docker (`db`, `redis` bukan `localhost`) |
+| `.gitignore` | Tambah `.env.production` |
+
+### Catatan Penting
+
+- Hostname di `.env.production` HARUS `db` dan `redis` (nama Docker service), bukan `localhost`.
+- `BETTER_AUTH_URL` harus `https://yourdomain.com` di production.
+- Nginx config app.conf perlu domain diganti dari `yourdomain.com` ke domain aktual.
+- Uncomment blok HTTPS di `app.conf` setelah Certbot berhasil issue certificate.
