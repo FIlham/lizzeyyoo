@@ -1,0 +1,69 @@
+{
+  "transactions": [
+    {
+      "type": "income",
+      "amount": 100000,
+      "category": "Lainnya",
+      "note": "uang masuk/awal",
+      "method": "Cash",
+      "id": "dc4dd20a-661b-465c-88ea-44dda623d623",
+      "date": "2026-07-05T15:12:05.064Z"
+    },
+    {
+      "type": "expense",
+      "amount": 10000,
+      "category": "Makanan",
+      "note": "jajan",
+      "method": "Cash",
+      "id": "d9c66881-d85a-4cde-a656-3c585861a402",
+      "date": "2026-07-05T15:47:47.030Z"
+    },
+    {
+      "type": "expense",
+      "amount": 15000,
+      "category": "Transportasi",
+      "note": "bensin",
+      "method": "Cash",
+      "id": "245cdd39-777b-4b28-9b87-ecc6596c0015",
+      "date": "2026-07-05T15:56:26.183Z"
+    },
+    {
+      "type": "income",
+      "amount": 940000,
+      "category": "Lainnya",
+      "note": "gaji masuk",
+      "method": "Cash",
+      "id": "58053f59-0db2-44b8-9aed-3a7f6d89decc",
+      "date": "2026-07-05T15:59:01.836Z"
+    },
+    {
+      "type": "expense",
+      "amount": 3000,
+      "category": "Makanan",
+      "note": "Jajan Es Teh",
+      "id": "d91f03eb-f0fa-40f1-9809-0f4a3cf9ca85",
+      "date": "2026-07-05T17:15:22.930Z"
+    },
+    {
+      "type": "expense",
+      "amount": 2000,
+      "category": "Makanan",
+      "note": "Jajan Roti",
+      "id": "a1fa2d5c-bad0-43f7-88a0-735dedf737e2",
+      "date": "2026-07-05T17:15:23.956Z"
+    }
+  ],
+  "budgets": {
+    "Makanan": 30000,
+    "Transportasi": 30000,
+    "Hiburan": 300000,
+    "Belanja": 50000,
+    "Tagihan": 800000,
+    "Lainnya": 200000
+  },
+  "goals": {
+    "target": 5000000,
+    "current": 20000,
+    "name": "Beli Laptop"
+  }
+}

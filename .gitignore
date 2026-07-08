@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Environment variables — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+
+# Dev server logs
+.dev-*.log
+*.log
+
+# Build output
+dist/
+
+# TanStack generated files (auto-regenerated, don't commit)
+# (routeTree.gen.ts is sometimes committed; uncomment below if you prefer not to)
+# src/routeTree.gen.ts
+
+# Drizzle migration output (optional — commit if you want reproducible migrations)
+# drizzle/
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/settings.json
