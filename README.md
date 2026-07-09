@@ -252,13 +252,35 @@ Sudah di-fix juga di kode: `src/server/auth.ts` sekarang explicitly pass `create
 
 ### Dev server jalan di port 3001 bukan 3000
 
-Normal — Rsbuild otomatis fallback ke port berikutnya jika 3000 sudah terpakai. Cek proses mana yang memakai port 3000 atau tutup proses tersebut sebelum `bun --bun run dev`.
+Normal — Vite otomatis fallback ke port berikutnya jika 3000 sudah terpakai. Cek proses mana yang memakai port 3000 atau tutup proses tersebut sebelum `bun --bun run dev`.
+
+### CSS & Gambar tidak termuat di production (halaman polos/broken image)
+
+**Penyebab:** Docker sebelumnya menjalankan entry point raw `dist/server/server.js` langsung lewat Bun. Bun hanya mengeksekusi handler SSR tanpa menyajikan file statis dari `dist/client`. Selain itu, `srvx` (server runner) memiliki bug resolusi path yang mencari folder static relatif terhadap file entry (`dist/server`), sehingga `--static dist/client` dibaca sebagai `dist/server/dist/client` (kosong).
+
+**Fix:**
+1. Gunakan script start baru di `package.json` yang menjalankan server via `srvx` dengan relative path:
+   ```json
+   "start": "srvx serve --prod --static ../client --entry dist/server/server.js"
+   ```
+2. Pastikan `Dockerfile` menggunakan script start ini:
+   ```dockerfile
+   CMD ["bun", "--bun", "run", "start"]
+   ```
 
 ---
 
 ## Changelog
 
-### Sesi Terbaru — Rate-Limiting & Deployment
+### Sesi Terbaru — Perbaikan Build & Static Assets Production
+
+- **Perbaikan CSS & Gambar Production:**
+  - Mengubah startup server di production agar menggunakan `srvx` runner untuk menyajikan file statis (`dist/client`) dan merutekan request SSR (`dist/server/server.js`).
+  - Mengoreksi bug resolusi path relatif `srvx` dengan menyetel `--static ../client` di script `"start"` di `package.json`.
+  - Memperbarui `Dockerfile` agar menggunakan `bun --bun run start` sebagai perintah startup container.
+  - Memperbarui dokumentasi stack di `IMPLEMENTATION.md` dan `README.md` untuk mengklarifikasi penggunaan Vite v6 (bukan Rsbuild).
+
+### Sesi Sebelumnya — Rate-Limiting & Deployment
 
 - **Rate-Limiting (Redis Sliding Window):**
   - Buat `src/server/ratelimit.server.ts` — generic rate limiter dengan `checkRateLimit()`, `RateLimitError`, dan pre-defined limit profiles.
@@ -275,10 +297,4 @@ Normal — Rsbuild otomatis fallback ke port berikutnya jika 3000 sudah terpakai
   - Let's Encrypt via Certbot, auto-renew setiap 12 jam.
   - `.env.production.example` sebagai template secrets.
 
-### Sesi Sebelumnya
-
-- **UI Overhaul:** Peralihan penuh dari desain bercahaya (neon) ke estetika *minimalist-industrial* berbasis *Tailwind Zinc palette*.
-- **GSAP Integration:** Animasi transisi dan *ScrollTrigger* di setiap halaman.
-- **Improved Layouts:** Restrukturisasi seksi "About" dan "Connect" pada *landing page*.
-- **Chat Scrolling Fix:** Area percakapan `/chat` mengulir hanya pada kontainernya. Nama agen kini "Lizzy".
 

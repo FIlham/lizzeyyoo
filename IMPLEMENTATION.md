@@ -6,7 +6,7 @@
 
 ## 1. Keputusan Arsitektur & Alasannya
 
-### Stack: TanStack Start + Rsbuild + Bun + Postgres + Redis + Better Auth
+### Stack: TanStack Start + Vite + Bun + Postgres + Redis + Better Auth
 
 Proyek ini di-upgrade dari MVP single-user (`Bun.file()+db.json`) ke arsitektur multi-user full-stack:
 
@@ -14,7 +14,7 @@ Proyek ini di-upgrade dari MVP single-user (`Bun.file()+db.json`) ke arsitektur 
 |---|---|---|
 | **Runtime** | Bun v1.3+ | Native speed, Bun API, flag `--bun` wajib |
 | **Framework** | TanStack Start | Full-stack React + SSR + server functions |
-| **Bundler** | Rsbuild (Rspack-based) | Build speed, native TanStack plugin |
+| **Bundler** | Vite v6 | Native Vite plugin for TanStack Start, industry standard |
 | **Database** | PostgreSQL via Drizzle ORM | Relational, multi-user, type-safe queries |
 | **Cache** | Redis (ioredis) | TTL per-user cache untuk summary & budgets |
 | **Auth** | Better Auth | Cookie session + Drizzle adapter + Redis secondary storage |
@@ -223,6 +223,10 @@ Semua 8 tools meneruskan `userId` (dari server function context) ke FinanceServi
   - **Fix DB:** `ALTER TABLE budgets/goals/transactions ALTER COLUMN created_at SET DEFAULT NOW()` (juga `updated_at`).
   - **Fix kode di `src/server/auth.ts`:** Explicitly pass `createdAt: now, updatedAt: now` di insert values `databaseHooks.user.create.after` — tidak lagi mengandalkan `DEFAULT` Postgres.
   - **File yang diubah:** [`src/server/auth.ts`](src/server/auth.ts) baris seed budgets & goals.
+- **Bug fix pemuatan aset statis (CSS/Gambar) di Production (Sesi Ini):**
+  - **Root cause:** `Dockerfile` menjalankan entry point raw `dist/server/server.js` secara langsung dengan Bun, yang mana hanya mengeksekusi handler SSR tanpa menyajikan file statis dari `dist/client`. Akibatnya, request file statis menghasilkan 404 Not Found.
+  - **Srvx Path Bug:** Server runner `srvx` meresolusi direktori statis relatif terhadap folder entry (`dist/server`). Menyetel `--static dist/client` menyebabkan pencarian ke `dist/server/dist/client` (kosong).
+  - **Fix:** Memperbarui script `"start"` di `package.json` menjadi `"srvx serve --prod --static ../client --entry dist/server/server.js"` (menggunakan `../client` agar tepat mengarah ke `dist/client` relatif terhadap `dist/server`). Memperbarui `CMD` di `Dockerfile` menjadi `["bun", "--bun", "run", "start"]` agar server dijalankan menggunakan script pembungkus `srvx` tersebut.
 
 ---
 

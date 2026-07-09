@@ -46,4 +46,4 @@ USER appuser
 EXPOSE 3000
 
 # Start the production server
-CMD ["bun", "--bun", "run", "dist/server/server.js"]
+CMD ["bun", "--bun", "run", "start"]

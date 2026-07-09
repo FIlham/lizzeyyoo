@@ -305,3 +305,5 @@ bun --bun run dev
 - [x] Buat `nginx/nginx.conf` + `nginx/conf.d/app.conf` — reverse proxy, SSL termination, rate-limit zones.
 - [x] Buat `.env.production.example` — template secrets untuk server.
 - [x] Update `.gitignore` — tambahkan `.env.production`.
+- [x] Perbaikan pemuatan aset statis (CSS/Gambar) di production dengan menggunakan `srvx` server runner. Mengoreksi bug resolusi path `srvx` dengan menyetel `--static ../client` di script start `package.json` dan memperbarui `CMD` di `Dockerfile` menjadi `bun --bun run start`.
+

@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "start": "vinxi start",
+    "start": "srvx serve --prod --static ../client --entry dist/server/server.js",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate"
   },
